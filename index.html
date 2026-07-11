@@ -485,23 +485,30 @@ canvas{display:block;width:100%;}
   }
   function killSoldiers(side, n, bounced){
     const arr=armies[side];
-    const n2=Math.min(n, arr.filter(s=>s.st!=='dying').length);
+    const aliveIdx=[];
+    for(let i=0;i<arr.length;i++){ if(arr[i].st!=='dying') aliveIdx.push(i); }
+    const n2=Math.min(n, aliveIdx.length);
+    if(n2<=0) return 0;
+    // shuffle so casualties are picked from anywhere in the living formation, not
+    // always the same fixed front-corner slot that array index 0 maps to
+    for(let i=aliveIdx.length-1;i>0;i--){
+      const j=Math.floor(Math.random()*(i+1));
+      const tmp=aliveIdx[i]; aliveIdx[i]=aliveIdx[j]; aliveIdx[j]=tmp;
+    }
     let killedCount=0;
-    for(let i=0;i<arr.length && killedCount<n2;i++){
-      if(arr[i].st!=='dying'){
-        const s = arr[i];
-        s.st='dying'; s.dieT=now();
-        s.bounced = !!bounced;
-        s.deathDuration = bounced ? 1750 : DEATH_MS; // bounced kills get extra time for the launch-and-bounce arc
-        // randomized ragdoll collapse — every fallen soldier tips a different way
-        s.fallPitch = rand(0.65,1.15)*Math.PI * (Math.random()<0.5?1:-1);
-        s.fallRoll  = rand(-1.4,1.4);
-        s.fallYawKick = rand(-1.1,1.1);
-        s.knockX = rand(bounced?-4.5:-3.2, bounced?4.5:3.2);
-        s.knockZ = rand(bounced?-4.5:-3.2, bounced?4.5:3.2);
-        spawnDeathSkull(s.x, s.z);
-        killedCount++;
-      }
+    for(let k=0;k<n2;k++){
+      const s = arr[aliveIdx[k]];
+      s.st='dying'; s.dieT=now();
+      s.bounced = !!bounced;
+      s.deathDuration = bounced ? 1750 : DEATH_MS; // bounced kills get extra time for the launch-and-bounce arc
+      // randomized ragdoll collapse — every fallen soldier tips a different way
+      s.fallPitch = rand(0.65,1.15)*Math.PI * (Math.random()<0.5?1:-1);
+      s.fallRoll  = rand(-1.4,1.4);
+      s.fallYawKick = rand(-1.1,1.1);
+      s.knockX = rand(bounced?-4.5:-3.2, bounced?4.5:3.2);
+      s.knockZ = rand(bounced?-4.5:-3.2, bounced?4.5:3.2);
+      spawnDeathSkull(s.x, s.z);
+      killedCount++;
     }
     return killedCount;
   }
