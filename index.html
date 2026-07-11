@@ -63,11 +63,14 @@ html,body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',mon
   display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
 }
 .header-headline{
-  font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:14px;
+  font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:19px;
   letter-spacing:0.03em; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;
 }
 .header-subline{
   font-size:10px; color:var(--text-dim); letter-spacing:0.03em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;
+}
+.header-watchline{
+  font-size:9px; font-weight:600; color:var(--purple); letter-spacing:0.12em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;
 }
 .stat{text-align:right;}
 .stat .lbl{font-size:9px;color:var(--text-dim);letter-spacing:0.1em;margin-bottom:3px;}
@@ -195,6 +198,7 @@ canvas{display:block;width:100%;}
     <div class="header-center">
       <div class="header-headline">THE TOP GIANTS OF BOTH CHAINS BATTLE IT OUT</div>
       <div class="header-subline">The 1 second chart of $ANSEM and $CASHCAT at war</div>
+      <div class="header-watchline">WATCH WHICH CONQUERS LIVE</div>
     </div>
     <div class="header-right">
       <button class="reset-btn" id="resetView">RESET VIEW</button>
