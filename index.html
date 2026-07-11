@@ -58,6 +58,17 @@ html,body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',mon
 .ticker-px{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:17px;}
 .ticker-sub{display:flex;gap:10px;font-size:10px;color:var(--text-dim);margin-top:2px;align-items:center;}
 .header-right{display:flex;align-items:center;gap:16px;}
+.header-center{
+  flex:1 1 auto; min-width:0; text-align:center; padding:0 12px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+}
+.header-headline{
+  font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:14px;
+  letter-spacing:0.03em; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;
+}
+.header-subline{
+  font-size:10px; color:var(--text-dim); letter-spacing:0.03em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;
+}
 .stat{text-align:right;}
 .stat .lbl{font-size:9px;color:var(--text-dim);letter-spacing:0.1em;margin-bottom:3px;}
 .stat .val{font-size:13px;font-weight:600;}
@@ -180,6 +191,10 @@ canvas{display:block;width:100%;}
         <div class="pair">Ansem vs Cashcat</div>
         <div class="venue">CHARTWARS · SIMULATED · 3D</div>
       </div>
+    </div>
+    <div class="header-center">
+      <div class="header-headline">THE TOP GIANTS OF BOTH CHAINS BATTLE IT OUT</div>
+      <div class="header-subline">The 1 second chart of $ANSEM and $CASHCAT at war</div>
     </div>
     <div class="header-right">
       <button class="reset-btn" id="resetView">RESET VIEW</button>
@@ -353,7 +368,7 @@ canvas{display:block;width:100%;}
     const d=new Date();
     const hh=d.getHours().toString().padStart(2,'0'), mm=d.getMinutes().toString().padStart(2,'0'), ss=d.getSeconds().toString().padStart(2,'0');
     state.feed.unshift({time:`${hh}:${mm}:${ss}`, winnerSide, ownPct, nativeSize, killed});
-    if(state.feed.length>16) state.feed.pop();
+    if(state.feed.length>24) state.feed.pop();
     renderFeed();
   }
   function renderFeed(){
@@ -416,7 +431,7 @@ canvas{display:block;width:100%;}
   let soldierSeq = 0;
 
   function layoutPos(index, side, clashX){
-    const rowSpacing=4.1, colSpacing=3.4;
+    const rowSpacing=5.0, colSpacing=4.3;
     const perRow = Math.max(4, Math.floor((FIELD_HALF_Z*2)/colSpacing));
     const row = Math.floor(index/perRow);
     const col = index % perRow;
@@ -535,38 +550,51 @@ canvas{display:block;width:100%;}
 
     const edge = pctGreen - pctRed;
     const winnerSide = edge>=0 ? 'green' : 'red';
-    const killed = winnerSide==='green' ? killedRed : killedGreen;
+    const reconciliationKilled = winnerSide==='green' ? killedRed : killedGreen;
 
-    // illustrative native-currency trade size, scaled off how big this update's move
-    // was — $ANSEM quoted in SOL, $CASHCAT quoted in ETH (~$81 and ~$1,800 respectively)
-    const ownPct = winnerSide==='green' ? pctGreen : pctRed;
-    const ownPctAbs = Math.abs(ownPct);
-    const nativeSize = winnerSide==='green'
-      ? clamp(ownPctAbs*rand(700,1300) + rand(0.2,3), 0.05, 400)   // SOL
-      : clamp(ownPctAbs*rand(50,100) + rand(0.01,0.3), 0.005, 40); // ETH
-
-    // an escalating buy — bigger than that same side's last buy — picks off one
-    // soldier on the opposing side on top of the usual reconciliation casualties
-    const verb = ownPct>=0 ? 'BUY' : 'SELL';
-    let extraKilled = 0;
-    if(verb==='BUY'){
-      const prevBuy = state.lastBuySize[winnerSide];
-      if(prevBuy!==null && nativeSize>prevBuy){
-        const opposingSide = winnerSide==='green' ? 'red' : 'green';
-        extraKilled = killSoldiers(opposingSide, 1, true);
-        if(extraKilled>0) reflow();
-      }
-      state.lastBuySize[winnerSide] = nativeSize;
+    // illustrative native-currency trade size for each side independently — $ANSEM
+    // quoted in SOL, $CASHCAT quoted in ETH (~$81 and ~$1,800 respectively)
+    function nativeSizeFor(side, pct){
+      const pctAbs = Math.abs(pct);
+      return side==='green'
+        ? clamp(pctAbs*rand(700,1300) + rand(0.2,3), 0.05, 400)   // SOL
+        : clamp(pctAbs*rand(50,100) + rand(0.01,0.3), 0.005, 40); // ETH
     }
-    const totalKilled = killed + extraKilled;
+    const greenSize = nativeSizeFor('green', pctGreen);
+    const redSize = nativeSizeFor('red', pctRed);
+
+    // an escalating buy — bigger than that same side's own last buy — picks off one
+    // soldier on the opposing side, evaluated independently for both sides every tick
+    let bonusKilledGreen = 0, bonusKilledRed = 0;
+    if(pctGreen>=0){
+      const prevBuy = state.lastBuySize.green;
+      if(prevBuy!==null && greenSize>prevBuy) bonusKilledGreen = killSoldiers('red', 1, true);
+      state.lastBuySize.green = greenSize;
+    }
+    if(pctRed>=0){
+      const prevBuy = state.lastBuySize.red;
+      if(prevBuy!==null && redSize>prevBuy) bonusKilledRed = killSoldiers('green', 1, true);
+      state.lastBuySize.red = redSize;
+    }
+    if(bonusKilledGreen>0 || bonusKilledRed>0) reflow();
+
+    const greenKilledTotal = (winnerSide==='green' ? reconciliationKilled : 0) + bonusKilledGreen;
+    const redKilledTotal = (winnerSide==='red' ? reconciliationKilled : 0) + bonusKilledRed;
 
     const gAliveCount = armies.green.filter(s=>s.st!=='dying').length;
     const rAliveCount = armies.red.filter(s=>s.st!=='dying').length;
 
-    pushFeed(winnerSide, ownPct, nativeSize, totalKilled);
+    // both sides get logged every update — previously only whichever side "won" the
+    // tick showed up, which meant a consistently stronger side could crowd the other
+    // out of the killfeed entirely
+    pushFeed('green', pctGreen, greenSize, greenKilledTotal);
+    pushFeed('red', pctRed, redSize, redKilledTotal);
     updateHeader(gAliveCount, rAliveCount);
     updateSimBadge();
-    maybeTriggerBigEvent(winnerSide, nativeSize, totalKilled, ownPct);
+    const winnerSize = winnerSide==='green' ? greenSize : redSize;
+    const winnerKilled = winnerSide==='green' ? greenKilledTotal : redKilledTotal;
+    const winnerPct = winnerSide==='green' ? pctGreen : pctRed;
+    maybeTriggerBigEvent(winnerSide, winnerSize, winnerKilled, winnerPct);
   }
 
   function updateSimBadge(){
@@ -1252,6 +1280,7 @@ canvas{display:block;width:100%;}
   const tankPartsBySide = { green: tankPartDefs('green', tankMeshes.green), red: tankPartDefs('red', tankMeshes.red) };
 
   function makeTankUnit(side){
+    const startYaw = side==='green' ? Math.PI/2 : -Math.PI/2;
     return {
       side,
       x: side==='green' ? -FIELD_HALF_X*0.55 : FIELD_HALF_X*0.55,
@@ -1259,6 +1288,7 @@ canvas{display:block;width:100%;}
       recoil: 0,
       firing: false,
       rollSpeed: rand(2.6,4.6),
+      bodyYaw: startYaw,       // current hull heading — turns toward wherever it's driving
       advanceTarget: undefined,
       turretYaw: 0,
       aimPhase: null,
@@ -1270,18 +1300,16 @@ canvas{display:block;width:100%;}
   for(let i=0;i<TANK_COUNT;i++){ tanks.green.push(makeTankUnit('green')); tanks.red.push(makeTankUnit('red')); }
 
   function computeTurretYawTo(t, targetX, targetZ){
-    const bodyFacing = t.side==='green' ? Math.PI/2 : -Math.PI/2;
     const dx = targetX - t.x, dz = targetZ - t.z;
     const worldYaw = Math.atan2(dx, dz);
-    let rel = worldYaw - bodyFacing;
+    let rel = worldYaw - t.bodyYaw;
     while(rel > Math.PI) rel -= Math.PI*2;
     while(rel < -Math.PI) rel += Math.PI*2;
     return rel;
   }
 
   function tankBarrelTipWorld(t){
-    const facing = t.side==='green' ? Math.PI/2 : -Math.PI/2;
-    const bodyQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0,facing,0));
+    const bodyQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0,t.bodyYaw,0));
     const yawQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, t.turretYaw||0, 0));
     const gY = terrainHeight(t.x, t.z);
     const turretPivot = new THREE.Vector3(0,1.28,0.05);
@@ -1308,13 +1336,32 @@ canvas{display:block;width:100%;}
         }
         if(t.firing) return; // stands still and holds position through aim + shot
 
-        if(t.advanceTarget===undefined || Math.abs(t.x-t.advanceTarget)<1.5){
+        if(t.advanceTarget===undefined || Math.hypot(t.x-t.advanceTarget.x, t.z-t.advanceTarget.z)<3){
           // rolls deeper into the opposing side's territory over time, not just holding the line
           const penetration = rand(12,42);
-          t.advanceTarget = clamp(state.clashX + dir*penetration, -FIELD_HALF_X+8, FIELD_HALF_X-8);
+          const targetX = clamp(state.clashX + dir*penetration, -FIELD_HALF_X+8, FIELD_HALF_X-8);
+          const targetZ = clamp(t.z + rand(-24,24), -FIELD_HALF_Z+8, FIELD_HALF_Z-8);
+          t.advanceTarget = {x:targetX, z:targetZ};
         }
-        const dx = t.advanceTarget - t.x;
-        t.x += Math.sign(dx)*Math.min(Math.abs(dx), t.rollSpeed*dt);
+
+        // turn the hull to face the target first, then drive forward along that heading —
+        // it doesn't just slide sideways while still facing its spawn direction
+        const dx = t.advanceTarget.x - t.x, dz = t.advanceTarget.z - t.z;
+        const desiredYaw = Math.atan2(dx, dz);
+        let diff = desiredYaw - t.bodyYaw;
+        while(diff>Math.PI) diff-=Math.PI*2;
+        while(diff<-Math.PI) diff+=Math.PI*2;
+        const turnSpeed = 1.1*dt;
+        if(Math.abs(diff)<=turnSpeed) t.bodyYaw = desiredYaw;
+        else t.bodyYaw += Math.sign(diff)*turnSpeed;
+
+        // only actually drives forward once it's roughly facing where it wants to go
+        if(Math.abs(diff) < 0.4){
+          const dist = Math.hypot(dx,dz);
+          const step = Math.min(dist, t.rollSpeed*dt);
+          t.x += Math.sin(t.bodyYaw)*step;
+          t.z += Math.cos(t.bodyYaw)*step;
+        }
       });
     });
   }
@@ -1323,14 +1370,13 @@ canvas{display:block;width:100%;}
     const turretPivot = new THREE.Vector3(0,1.28,0.05);
     ['green','red'].forEach(side=>{
       const parts = tankPartsBySide[side];
-      const facing = side==='green' ? Math.PI/2 : -Math.PI/2;
       const list = tanks[side];
       for(let i=0;i<list.length;i++){
         const t = list[i];
         const gY = terrainHeight(t.x, t.z);
         const kick = t.recoil * 0.22; // barrel/turret recoil-back on fire
         const basePos = new THREE.Vector3(t.x, gY, t.z);
-        const bodyQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0,facing,0));
+        const bodyQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0,t.bodyYaw,0));
         const yawQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, t.turretYaw||0, 0));
         parts.forEach(p=>{
           if(p.recoilPart){
