@@ -98,12 +98,12 @@ canvas{display:block;width:100%;}
   text-shadow:0 2px 10px rgba(0,0,0,0.8);
 }
 .hud-token{text-align:center;min-width:150px;}
-.hud-px{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:34px;color:#fff;line-height:1;}
-.hud-token.green .hud-px{color:var(--buy);}
-.hud-token.red .hud-px{color:var(--sell);}
+.hud-mcap-big{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:34px;color:#fff;line-height:1;}
+.hud-token.green .hud-mcap-big{color:var(--buy);}
+.hud-token.red .hud-mcap-big{color:var(--sell);}
 .hud-sub{display:flex;gap:8px;justify-content:center;align-items:center;font-size:11px;margin-top:4px;}
 .hud-tag{color:rgba(255,255,255,0.55);letter-spacing:0.05em;}
-.hud-mcap{font-size:9.5px;color:rgba(255,255,255,0.4);margin-top:2px;letter-spacing:0.04em;}
+.hud-px-small{font-size:9.5px;color:rgba(255,255,255,0.4);margin-top:2px;letter-spacing:0.04em;}
 .hud-vs{font-family:'Space Grotesk',sans-serif;font-size:13px;color:rgba(255,255,255,0.3);padding-bottom:8px;}
 
 .hud-dominance{
@@ -192,15 +192,15 @@ canvas{display:block;width:100%;}
 
     <div class="hud-price">
       <div class="hud-token green">
-        <div class="hud-px" id="pxGreen">$0.2600</div>
+        <div class="hud-mcap-big" id="mcapGreen">$260.0M</div>
         <div class="hud-sub"><span id="chgGreen" class="chg up">▲ 0.00%</span><span class="hud-tag">$ANSEM · SOL</span></div>
-        <div class="hud-mcap" id="mcapGreen">MCAP $260.0M</div>
+        <div class="hud-px-small" id="pxGreen">$0.2600</div>
       </div>
       <div class="hud-vs">VS</div>
       <div class="hud-token red">
-        <div class="hud-px" id="pxRed">$0.1200</div>
+        <div class="hud-mcap-big" id="mcapRed">$120.0M</div>
         <div class="hud-sub"><span id="chgRed" class="chg up">▲ 0.00%</span><span class="hud-tag">$CASHCAT · RH-L2</span></div>
-        <div class="hud-mcap" id="mcapRed">MCAP $120.0M</div>
+        <div class="hud-px-small" id="pxRed">$0.1200</div>
       </div>
     </div>
 
@@ -269,7 +269,7 @@ canvas{display:block;width:100%;}
   function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
   function fmtUSD(v){ return "$"+v.toFixed(2); }
   function fmtPx(v){ return "$"+v.toFixed(v<1?4:2); }
-  function fmtMcap(v){ return "MCAP $"+(v/1_000_000).toFixed(1)+"M"; }
+  function fmtMcap(v){ return "$"+(v/1_000_000).toFixed(1)+"M"; }
   function now(){ return performance.now(); }
 
   // ================= DOM =================
@@ -600,34 +600,54 @@ canvas{display:block;width:100%;}
   }
 
   // ---------------- live: DexScreener public API, polled once per second ----------------
-  function pickBestPair(pairs, chainId, symbol){
+  // verified contract addresses — matching by symbol alone risks picking a copycat
+  // token with the same ticker on a different pool, which is a real, common problem
+  // for both of these (confirmed via multiple independent sources)
+  const KNOWN_TOKENS = {
+    green: { chainId:'solana',    address:'9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump' },  // $ANSEM / The Black Bull
+    red:   { chainId:'robinhood', address:'0x020bfC650A365f8BB26819deAAbF3E21291018b4' }      // $CASHCAT
+  };
+
+  function pickWeightedPrice(pairs, chainId, address){
     if(!pairs || !pairs.length) return null;
+    const addrLower = address.toLowerCase();
     const matches = pairs.filter(p =>
-      p.chainId===chainId && p.baseToken && p.baseToken.symbol &&
-      p.baseToken.symbol.toUpperCase()===symbol && p.priceUsd
+      p.chainId===chainId && p.baseToken && p.baseToken.address &&
+      p.baseToken.address.toLowerCase()===addrLower && p.priceUsd
     );
     if(!matches.length) return null;
-    matches.sort((a,b) => ((b.liquidity&&b.liquidity.usd)||0) - ((a.liquidity&&a.liquidity.usd)||0));
-    return matches[0];
+    // these are thin, fast-moving pools that can briefly diverge from each other —
+    // a liquidity-weighted average across all of the verified token's pools reads
+    // more accurately than trusting whichever single pool happens to be biggest
+    let totalWeight=0, weightedPx=0, bestLiq=-1, bestMcap=0;
+    matches.forEach(p=>{
+      const px = parseFloat(p.priceUsd);
+      if(!isFinite(px) || px<=0) return;
+      const liq = (p.liquidity && p.liquidity.usd) || 0;
+      const w = Math.max(liq, 1);
+      totalWeight += w;
+      weightedPx += px*w;
+      if(liq>bestLiq){ bestLiq=liq; bestMcap = p.marketCap || p.fdv || 0; }
+    });
+    if(totalWeight<=0) return null;
+    return { px: weightedPx/totalWeight, mcap: bestMcap };
   }
 
-  async function fetchToken(query, chainId, symbol){
+  async function fetchToken(query, chainId, address){
     const res = await fetch('https://api.dexscreener.com/latest/dex/search?q='+encodeURIComponent(query));
     if(!res.ok) throw new Error('http '+res.status);
     const data = await res.json();
-    const pair = pickBestPair(data.pairs, chainId, symbol);
-    if(!pair) throw new Error('no matching pair');
-    const px = parseFloat(pair.priceUsd);
-    const mcap = pair.marketCap || pair.fdv || px*1_000_000_000;
-    if(!isFinite(px) || px<=0) throw new Error('bad price');
-    return {px, mcap};
+    const result = pickWeightedPrice(data.pairs, chainId, address);
+    if(!result || !isFinite(result.px) || result.px<=0) throw new Error('no matching pair');
+    const mcap = result.mcap || result.px*1_000_000_000; // both tokens confirmed to use a 1B fixed supply
+    return {px: result.px, mcap};
   }
 
   async function liveUpdateOnce(){
     try{
       const [g, r] = await Promise.all([
-        fetchToken('ANSEM', 'solana', 'ANSEM'),
-        fetchToken('CASHCAT', 'robinhood', 'CASHCAT')
+        fetchToken('ANSEM', KNOWN_TOKENS.green.chainId, KNOWN_TOKENS.green.address),
+        fetchToken('CASHCAT', KNOWN_TOKENS.red.chainId, KNOWN_TOKENS.red.address)
       ]);
       state.liveMode = true;
       state.fetchFails = 0;
